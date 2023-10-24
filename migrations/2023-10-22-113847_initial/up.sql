@@ -13,9 +13,11 @@ CREATE TABLE cards (
 
 CREATE TABLE prices (
   created_at TIMESTAMP NOT NULL PRIMARY KEY DEFAULT CURRENT_TIMESTAMP,
+  card_id VARCHAR NOT NULL REFERENCES cards(id),
+  set_code VARCHAR NOT NULL,
+  number INTEGER NOT NULL,
   min_price Float NOT NULL,
   avg_price Float NOT NULL,
-  card_id VARCHAR NOT NULL REFERENCES cards(id),
   is_foil BOOLEAN NOT NULL DEFAULT FALSE,
   locale VARCHAR NOT NULL
 );

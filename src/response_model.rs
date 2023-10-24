@@ -116,3 +116,30 @@ impl ResponseFullCard {
         }
     }
 }
+
+#[derive(Debug, Serialize)]
+pub struct ResponseMultiPrice {
+    pub id: String,                           // TFC-1
+    pub locale: String,                       // en
+    pub min_price: f64,                       // 0.5
+    pub avg_price: f64,                       // 0.6
+    pub price_created_at: DateTime<Utc>,      // 2021-01-01T00:00:00Z
+    pub foil_min_price: f64,                  // 1.0
+    pub foil_avg_price: f64,                  // 2.0
+    pub foil_price_created_at: DateTime<Utc>, // 2021-01-01T00:00:00Z
+}
+
+impl ResponseMultiPrice {
+    pub fn new(price: Price, foil_price: Price) -> ResponseMultiPrice {
+        ResponseMultiPrice {
+            id: price.card_id,
+            locale: price.locale,
+            min_price: price.min_price,
+            avg_price: price.avg_price,
+            price_created_at: Utc.from_utc_datetime(&price.created_at),
+            foil_min_price: foil_price.min_price,
+            foil_avg_price: foil_price.avg_price,
+            foil_price_created_at: Utc.from_utc_datetime(&foil_price.created_at),
+        }
+    }
+}

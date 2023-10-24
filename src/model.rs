@@ -51,16 +51,20 @@ pub struct LocalizedRarity {
 pub struct Price {
     pub created_at: NaiveDateTime,
     pub card_id: String, // TFC-1
-    pub min_price: f64,  // 0.5
-    pub avg_price: f64,  // 0.6
-    pub is_foil: bool,   // false
-    pub locale: String,  // en
+    pub set_code: String,
+    pub number: i32,    // 1
+    pub min_price: f64, // 0.5
+    pub avg_price: f64, // 0.6
+    pub is_foil: bool,  // false
+    pub locale: String, // en
 }
 
 impl Price {
     pub fn new(
         _card_id: String,
         _created_at: NaiveDateTime,
+        _set_code: String,
+        _number: i32,
         _min_price: f64,
         _avg_price: f64,
         _is_foil: bool,
@@ -69,6 +73,8 @@ impl Price {
         Self {
             created_at: _created_at,
             card_id: _card_id,
+            set_code: _set_code,
+            number: _number,
             min_price: _min_price,
             avg_price: _avg_price,
             is_foil: _is_foil,

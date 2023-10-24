@@ -65,6 +65,7 @@ async fn main() -> io::Result<()> {
             // .service(card::get)
             .service(price::get)
             .service(price::create)
+            .service(price::get_all_prices)
     })
     .bind("0.0.0.0:9090")?
     .run()

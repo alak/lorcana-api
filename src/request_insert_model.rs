@@ -62,6 +62,8 @@ impl InsertRequestPrice {
         Price::new(
             format!("{}-{}", self.set_code, self.number),
             Utc::now().naive_utc(),
+            self.set_code.clone(),
+            self.number.clone(),
             self.min_price.clone(),
             self.avg_price.clone(),
             self.is_foil.clone(),
