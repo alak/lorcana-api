@@ -42,9 +42,11 @@ diesel::table! {
 diesel::table! {
     prices (created_at) {
         created_at -> Timestamp,
+        card_id -> Varchar,
+        set_code -> Varchar,
+        number -> Int4,
         min_price -> Float8,
         avg_price -> Float8,
-        card_id -> Varchar,
         is_foil -> Bool,
         locale -> Varchar,
     }

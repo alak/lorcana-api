@@ -37,7 +37,10 @@ pub async fn create(
 fn create_price(_price: Price, conn: &mut DBPooledConnection) -> Result<Price, Error> {
     use crate::schema::prices::dsl::*;
 
-    let _ = diesel::insert_into(prices).values(&_price).execute(conn);
+    let _ = diesel::insert_into(prices)
+        .values(&_price)
+        .execute(conn)
+        .expect("Can't create Price");
 
     Ok(_price)
 }
@@ -130,6 +133,74 @@ fn find_last_price(
         _localized_color,
         _localized_rarity,
     ));
+}
+
+///get all prices `/all_prices/{set_code}`
+#[get("/all_prices/{set_code}")]
+pub async fn get_all_prices(
+    path: Path<String>,
+    pool: Data<DBPool>,
+    req: HttpRequest,
+) -> HttpResponse {
+    println!("get all prices");
+    let query_str = req.query_string();
+    let qs = QString::from(query_str);
+    let locale = qs.get("locale").unwrap_or("en").to_string();
+
+    let set_code = path.into_inner();
+
+    let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
+    let prices_response = web::block(move || find_all_prices(set_code, locale, &mut conn)).await;
+
+    match prices_response {
+        Ok(prices_response) => HttpResponse::Created()
+            .content_type(APPLICATION_JSON)
+            .json(prices_response),
+        _ => HttpResponse::NotFound().await.unwrap(),
+    }
+}
+
+fn find_all_prices(
+    _set_code: String,
+    _locale: String,
+    conn: &mut DBPooledConnection,
+) -> Result<Vec<ResponseMultiPrice>, Error> {
+    let _prices = prices::table
+        .order((prices::number.asc(), prices::created_at.desc()))
+        .distinct_on(prices::number)
+        .filter(prices::locale.eq(_locale.clone()))
+        .filter(prices::is_foil.eq(false))
+        .filter(prices::set_code.eq(_set_code.clone()))
+        .select(Price::as_select())
+        .load(conn)
+        .unwrap();
+
+    let _foil_prices = prices::table
+        .order((prices::number.asc(), prices::created_at.desc()))
+        .distinct_on(prices::number)
+        .filter(prices::locale.eq(_locale.clone()))
+        .filter(prices::is_foil.eq(true))
+        .filter(prices::set_code.eq(_set_code.clone()))
+        .select(Price::as_select())
+        .load(conn)
+        .unwrap();
+
+    if _prices.len() != _foil_prices.len() {
+        return Err(Error::NotFound);
+    }
+
+    let mut _multi_prices = Vec::new();
+
+    for i in 0.._prices.len() {
+        let _price = _prices[i].clone();
+        let _foil_price = _foil_prices[i].clone();
+
+        let resp = ResponseMultiPrice::new(_price, _foil_price);
+
+        _multi_prices.push(resp);
+    }
+
+    return Ok(_multi_prices);
 }
 
 fn value_to_bool(value: &str) -> bool {
