@@ -7,7 +7,9 @@ use crate::{DBPool, DBPooledConnection};
 use crate::bearer_auth::BearerToken;
 use crate::model::*;
 use crate::request_insert_model::*;
+use diesel::upsert::on_constraint;
 use diesel::RunQueryDsl;
+use crate::diesel::ExpressionMethods;
 
 /// create a card `/cards`
 #[post("/cards")]
@@ -34,19 +36,28 @@ fn create_card(
     conn: &mut DBPooledConnection,
 ) -> Result<Card, Error> {
     use crate::schema::cards::dsl::*;
-    use crate::schema::localized_names::dsl::*;
 
     let _ = diesel::insert_into(cards)
         .values(&_card)
+        .on_conflict(on_constraint("cards_pkey"))
+        .do_update()
+        .set((name.eq(_card.name.clone()), card_market_handle.eq(_card.card_market_handle.clone())))
         .execute(conn)
         .expect("Error saving new card");
 
     for localized_name in _localized_names {
+        use crate::schema::localized_names::dsl::*;
+        let name_cloned = localized_name.name.clone();
         let _ = diesel::insert_into(localized_names)
             .values(localized_name)
+            .on_conflict(on_constraint("localized_names_pkey"))
+            .do_update()
+            .set(name.eq(name_cloned.clone()))
             .execute(conn)
             .expect("Error saving new localized_name");
     }
 
     Ok(_card)
 }
+
+
