@@ -1,1 +1,38 @@
-..
+name: Build & Deploy
+on:
+  push:
+    branches: [main]
+    
+jobs:
+  deploy:
+    name: "Deploy to staging"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh/
+          echo "$SSH_KEY" > ~/.ssh/prod.key
+          chmod 600 ~/.ssh/prod.key
+          cat >>~/.ssh/config <<END
+          Host prod
+            HostName $SSH_HOST
+            User $SSH_USER
+            IdentityFile ~/.ssh/prod.key
+            StrictHostKeyChecking no
+          END
+        env:
+          SSH_USER: ${{ secrets.SSH_USERNAME }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+
+      - name: Check out the source
+        run: ssh prod 'cd lorcana-api && git fetch && git reset --hard origin/main'
+
+      - name: Build the project
+        run: ssh prod 'cd lorcana-api && /home/alakme/.cargo/bin/cargo build --release'
+
+      - name: Restart Lorcana Service
+        run: ssh prod 'echo "${{secrets.SSH_PASSWORD}}" | sudo -S systemctl restart lorcana-api.alak.app.service'
+        
+      - name: Reload ngnix Service
+        run:  ssh prod 'echo "${{secrets.SSH_PASSWORD}}" | sudo -S systemctl reload nginx'
