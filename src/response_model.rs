@@ -158,8 +158,8 @@ pub struct ResponsePricesWrapper {
 
 impl ResponsePricesWrapper {
     pub fn new(_foil: Vec<Price>, _standard: Vec<Price>) -> ResponsePricesWrapper {
-        let f =  _foil.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
-        let std = _standard.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
+        let f =  _foil.into_iter().map(|price| { ResponsePrice::new(price, true) }).collect();
+        let std = _standard.into_iter().map(|price| { ResponsePrice::new(price, false) }).collect();
         ResponsePricesWrapper {
             foil: f,
             standard: std,
@@ -174,17 +174,19 @@ pub struct ResponsePrice {
     pub locale: String,                       // en
     pub min_price: f64,                       // 0.5
     pub avg_price: f64,                       // 0.6
+    pub is_foil: bool,                        // false
     #[serde_as(as = "TimestampMilliSeconds<i64>")]  
     pub created_at: DateTime<Utc>,      // 2021-01-01T00:00:00Z
 }
 
 impl ResponsePrice {
-    pub fn new(price: Price) -> ResponsePrice {
+    pub fn new(price: Price, _is_foil: bool) -> ResponsePrice {
         ResponsePrice {
             id: price.card_id,
             locale: price.locale,
             min_price: price.min_price,
             avg_price: price.avg_price,
+            is_foil: _is_foil,
             created_at: Utc.from_utc_datetime(&price.created_at),
         }
     }
