@@ -146,16 +146,16 @@ impl ResponseMultiPrice {
 
 #[derive(Debug, Serialize)]
 pub struct ResponsePricesWrapper {
-    pub foils: Vec<ResponsePrice>,                           
+    pub foil: Vec<ResponsePrice>,                           
     pub standard: Vec<ResponsePrice>,                      
 }
 
 impl ResponsePricesWrapper {
-    pub fn new(_foils: Vec<Price>, _standard: Vec<Price>) -> ResponsePricesWrapper {
-        let f =  _foils.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
+    pub fn new(_foil: Vec<Price>, _standard: Vec<Price>) -> ResponsePricesWrapper {
+        let f =  _foil.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
         let std = _standard.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
         ResponsePricesWrapper {
-            foils: f,
+            foil: f,
             standard: std,
         }
     }
