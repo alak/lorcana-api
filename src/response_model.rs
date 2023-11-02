@@ -143,3 +143,41 @@ impl ResponseMultiPrice {
         }
     }
 }
+
+#[derive(Debug, Serialize)]
+pub struct ResponsePricesWrapper {
+    pub foils: Vec<ResponsePrice>,                           
+    pub non_foils: Vec<ResponsePrice>,                      
+}
+
+impl ResponsePricesWrapper {
+    pub fn new(_foils: Vec<Price>, _non_foils: Vec<Price>) -> ResponsePricesWrapper {
+        let f =  _foils.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
+        let n_f = _non_foils.into_iter().map(|price| { ResponsePrice::new(price) }).collect();
+        ResponsePricesWrapper {
+            foils: f,
+            non_foils: n_f,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResponsePrice {
+    pub id: String,                           // TFC-1
+    pub locale: String,                       // en
+    pub min_price: f64,                       // 0.5
+    pub avg_price: f64,                       // 0.6
+    pub created_at: DateTime<Utc>,      // 2021-01-01T00:00:00Z
+}
+
+impl ResponsePrice {
+    pub fn new(price: Price) -> ResponsePrice {
+        ResponsePrice {
+            id: price.card_id,
+            locale: price.locale,
+            min_price: price.min_price,
+            avg_price: price.avg_price,
+            created_at: Utc.from_utc_datetime(&price.created_at),
+        }
+    }
+}

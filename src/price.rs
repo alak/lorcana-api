@@ -203,6 +203,65 @@ fn find_all_prices(
     return Ok(_multi_prices);
 }
 
+///get all prices `/all_grouped_prices/{set_code}`
+#[get("/all_grouped_prices/{set_code}")]
+pub async fn all_grouped_prices(
+    path: Path<String>,
+    pool: Data<DBPool>,
+    req: HttpRequest,
+) -> HttpResponse {
+    println!("get all prices");
+    let query_str = req.query_string();
+    let qs = QString::from(query_str);
+    let locale = qs.get("locale").unwrap_or("en").to_string();
+
+    let set_code = path.into_inner();
+
+    let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
+    let prices_response = web::block(move || find_all_grouped_prices(set_code, locale, &mut conn)).await;
+
+    match prices_response {
+        Ok(prices_response) => HttpResponse::Created()
+            .content_type(APPLICATION_JSON)
+            .json(prices_response),
+        _ => HttpResponse::NotFound().await.unwrap(),
+    }
+}
+
+fn find_all_grouped_prices(
+    _set_code: String,
+    _locale: String,
+    conn: &mut DBPooledConnection,
+) -> Result<ResponsePricesWrapper, Error> {
+    let _prices = prices::table
+        .order((prices::number.asc(), prices::created_at.desc()))
+        .distinct_on(prices::number)
+        .filter(prices::locale.eq(_locale.clone()))
+        .filter(prices::is_foil.eq(false))
+        .filter(prices::set_code.eq(_set_code.clone()))
+        .select(Price::as_select())
+        .load(conn)
+        .unwrap();
+
+    let _foil_prices = prices::table
+        .order((prices::number.asc(), prices::created_at.desc()))
+        .distinct_on(prices::number)
+        .filter(prices::locale.eq(_locale.clone()))
+        .filter(prices::is_foil.eq(true))
+        .filter(prices::set_code.eq(_set_code.clone()))
+        .select(Price::as_select())
+        .load(conn)
+        .unwrap();
+
+    if _prices.len() != _foil_prices.len() {
+        return Err(Error::NotFound);
+    }
+
+    let resp = ResponsePricesWrapper::new(_foil_prices.clone(), _prices.clone());
+    
+    return Ok(resp);
+}
+
 fn value_to_bool(value: &str) -> bool {
     let truth_value: bool = match value {
         "true" => true,
