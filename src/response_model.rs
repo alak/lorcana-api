@@ -1,10 +1,12 @@
 use crate::model::*;
-use chrono::DateTime;
-use chrono::TimeZone;
-use chrono::Utc;
+use chrono::{DateTime, TimeZone, Utc};
+extern crate serde_derive;
 use serde::Serialize;
 use std::collections::HashMap;
+use serde_with::TimestampMilliSeconds;
+use serde_with::serde_as;
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 pub struct ResponsePricedCard {
     pub id: String,                      // TFC-1
@@ -19,7 +21,8 @@ pub struct ResponsePricedCard {
     pub min_price: f64,                  // 0.5
     pub avg_price: f64,                  // 0.6
     pub is_foil: bool,                   // false
-    pub price_created_at: DateTime<Utc>, // 2021-01-01T00:00:00Z
+    #[serde_as(as = "TimestampMilliSeconds<i64>")]             
+    pub price_created_at: DateTime<Utc>, // TimestampMilliSeconds
 }
 
 impl ResponsePricedCard {
@@ -117,15 +120,18 @@ impl ResponseFullCard {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 pub struct ResponseMultiPrice {
     pub id: String,                           // TFC-1
     pub locale: String,                       // en
     pub min_price: f64,                       // 0.5
     pub avg_price: f64,                       // 0.6
+    #[serde_as(as = "TimestampMilliSeconds<i64>")]  
     pub price_created_at: DateTime<Utc>,      // 2021-01-01T00:00:00Z
     pub foil_min_price: f64,                  // 1.0
     pub foil_avg_price: f64,                  // 2.0
+    #[serde_as(as = "TimestampMilliSeconds<i64>")] 
     pub foil_price_created_at: DateTime<Utc>, // 2021-01-01T00:00:00Z
 }
 
@@ -161,12 +167,14 @@ impl ResponsePricesWrapper {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Serialize)]
 pub struct ResponsePrice {
     pub id: String,                           // TFC-1
     pub locale: String,                       // en
     pub min_price: f64,                       // 0.5
     pub avg_price: f64,                       // 0.6
+    #[serde_as(as = "TimestampMilliSeconds<i64>")]  
     pub created_at: DateTime<Utc>,      // 2021-01-01T00:00:00Z
 }
 
