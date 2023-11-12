@@ -9,7 +9,7 @@ use diesel::r2d2::ConnectionManager;
 use diesel::PgConnection;
 use r2d2::{Pool, PooledConnection};
 
-use actix_web::{middleware, App, HttpServer};
+use actix_web::{middleware, App, HttpServer, HttpRequest, get, HttpResponse, web};
 
 mod bearer_auth;
 mod card;
@@ -21,10 +21,26 @@ mod response;
 mod response_model;
 mod schema;
 
+use std::fs;
+
 pub type DBPool = Pool<ConnectionManager<PgConnection>>;
 pub type DBPooledConnection = PooledConnection<ConnectionManager<PgConnection>>;
 
-#[actix_rt::main]
+#[get("/static/{filename:.*}")]
+async fn index(req: HttpRequest) ->HttpResponse {
+    let path: std::path::PathBuf = req.match_info().query("filename").parse().unwrap();
+
+    let file_path = format!("./static/{}", path.to_str().unwrap()).to_string();
+
+    let contents = fs::read_to_string(file_path)
+        .expect("Should have been able to read the file");
+
+    return HttpResponse::Ok()
+            .content_type("text/html; charset=utf-8")
+            .body(contents);
+}
+
+#[actix_web::main]
 async fn main() -> io::Result<()> {
     _ = dotenv();
 
@@ -55,18 +71,19 @@ async fn main() -> io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+        
             // Set up DB pool to be used with web::Data<Pool> extractor
-            .data(pool.clone())
+            .app_data(web::Data::new(pool.clone()))
             // enable logger - always register actix-web Logger middleware last
             .wrap(middleware::Logger::default())
             // register HTTP requests handlers
             .service(card::create)
-            // .service(card::list)
-            // .service(card::get)
             .service(price::get)
             .service(price::create)
             .service(price::get_all_prices)
             .service(price::all_grouped_prices)
+            .service(index)
+            
     })
     .bind("0.0.0.0:9090")?
     .run()

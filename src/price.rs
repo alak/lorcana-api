@@ -1,6 +1,6 @@
 use actix_web::web::{Data, Json, Path};
-use actix_web::{web, HttpRequest, HttpResponse};
-use diesel::result::Error;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use diesel::result::Error as DieselError;
 
 use crate::bearer_auth::BearerToken;
 use crate::model::*;
@@ -12,9 +12,32 @@ use diesel::prelude::*;
 
 use qstring::QString;
 
-use crate::constants::{APPLICATION_JSON, CONNECTION_POOL_ERROR};
+use crate::constants::{CONNECTION_POOL_ERROR};
 
 use crate::{DBPool, DBPooledConnection};
+
+use std::fmt;
+
+#[derive(serde::Serialize)]
+struct SerializableError {
+    message: String,
+}
+
+impl From<DieselError> for SerializableError {
+    fn from(error: DieselError) -> Self {
+        SerializableError {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl fmt::Debug for SerializableError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+      f.debug_struct("Error")
+        .field("message", &self.message)
+        .finish()
+    }
+  }
 
 /// create a price `/prices`
 #[post("/prices")]
@@ -22,19 +45,19 @@ pub async fn create(
     price_req: Json<InsertRequestPrice>,
     pool: Data<DBPool>,
     _token: BearerToken,
-) -> HttpResponse {
+) -> actix_web::Result<impl Responder> {
     println!("create prices");
     let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
 
     let price = web::block(move || create_price(price_req.to_price(), &mut conn)).await;
 
-    match price {
+    Ok(match price {
         Ok(_) => HttpResponse::Created().finish(),
         _ => HttpResponse::NoContent().await.unwrap(),
-    }
+    })
 }
 
-fn create_price(_price: Price, conn: &mut DBPooledConnection) -> Result<Price, Error> {
+fn create_price(_price: Price, conn: &mut DBPooledConnection) -> Result<Price, DieselError> {
     use crate::schema::prices::dsl::*;
 
     let _ = diesel::insert_into(prices)
@@ -73,9 +96,8 @@ pub async fn get(
     .await;
 
     match price_response {
-        Ok(price_response) => HttpResponse::Created()
-            .content_type(APPLICATION_JSON)
-            .json(price_response),
+        Ok(price) => HttpResponse::Ok()
+            .json(price.unwrap()),
         _ => HttpResponse::NotFound().await.unwrap(),
     }
 }
@@ -85,7 +107,7 @@ fn find_last_price(
     _is_foil: bool,
     _locale: String,
     conn: &mut DBPooledConnection,
-) -> Result<ResponsePricedCard, Error> {
+) -> Result<ResponsePricedCard, SerializableError> {
     let _card = cards::table
         .filter(cards::id.eq(_card_id.clone()))
         .select(Card::as_select())
@@ -153,9 +175,7 @@ pub async fn get_all_prices(
     let prices_response = web::block(move || find_all_prices(set_code, locale, &mut conn)).await;
 
     match prices_response {
-        Ok(prices_response) => HttpResponse::Created()
-            .content_type(APPLICATION_JSON)
-            .json(prices_response),
+        Ok(resp) => HttpResponse::Ok().json(resp.unwrap()),
         _ => HttpResponse::NotFound().await.unwrap(),
     }
 }
@@ -164,7 +184,7 @@ fn find_all_prices(
     _set_code: String,
     _locale: String,
     conn: &mut DBPooledConnection,
-) -> Result<Vec<ResponseMultiPrice>, Error> {
+) -> Result<Vec<ResponseMultiPrice>, SerializableError> {
     let _prices = prices::table
         .order((prices::number.asc(), prices::created_at.desc()))
         .distinct_on(prices::number)
@@ -186,7 +206,7 @@ fn find_all_prices(
         .unwrap();
 
     if _prices.len() != _foil_prices.len() {
-        return Err(Error::NotFound);
+        return Err(DieselError::NotFound.into());
     }
 
     let mut _multi_prices = Vec::new();
@@ -221,9 +241,8 @@ pub async fn all_grouped_prices(
     let prices_response = web::block(move || find_all_grouped_prices(set_code, locale, &mut conn)).await;
 
     match prices_response {
-        Ok(prices_response) => HttpResponse::Created()
-            .content_type(APPLICATION_JSON)
-            .json(prices_response),
+        Ok(resp) => HttpResponse::Ok()
+            .json(resp.unwrap()),
         _ => HttpResponse::NotFound().await.unwrap(),
     }
 }
@@ -232,7 +251,7 @@ fn find_all_grouped_prices(
     _set_code: String,
     _locale: String,
     conn: &mut DBPooledConnection,
-) -> Result<ResponsePricesWrapper, Error> {
+) -> Result<ResponsePricesWrapper, SerializableError> {
     let _prices = prices::table
         .order((prices::number.asc(), prices::created_at.desc()))
         .distinct_on(prices::number)
@@ -254,7 +273,7 @@ fn find_all_grouped_prices(
         .unwrap();
 
     if _prices.len() != _foil_prices.len() {
-        return Err(Error::NotFound);
+        return Err(DieselError::NotFound.into());
     }
 
     let resp = ResponsePricesWrapper::new(_foil_prices.clone(), _prices.clone());

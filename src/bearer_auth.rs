@@ -10,7 +10,6 @@ pub struct BearerToken(String);
 use std::env;
 
 impl FromRequest for BearerToken {
-    type Config = ();
     type Error = Error;
     type Future = Ready<Result<BearerToken, Error>>;
 
