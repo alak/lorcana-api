@@ -8,11 +8,11 @@ use crate::request_insert_model::*;
 use crate::response_model::*;
 use crate::schema::*;
 
+use chrono::Utc;
 use diesel::prelude::*;
-
 use qstring::QString;
 
-use crate::constants::{CONNECTION_POOL_ERROR};
+use crate::constants::CONNECTION_POOL_ERROR;
 
 use crate::{DBPool, DBPooledConnection};
 
@@ -33,23 +33,38 @@ impl From<DieselError> for SerializableError {
 
 impl fmt::Debug for SerializableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-      f.debug_struct("Error")
-        .field("message", &self.message)
-        .finish()
+        f.debug_struct("Error")
+            .field("message", &self.message)
+            .finish()
     }
-  }
+}
 
 /// create a price `/prices`
 #[post("/prices")]
 pub async fn create(
-    price_req: Json<InsertRequestPrice>,
+    price_req: Json<InsertRequestPriceRecord>,
     pool: Data<DBPool>,
     _token: BearerToken,
 ) -> actix_web::Result<impl Responder> {
     println!("create prices");
     let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
 
-    let price = web::block(move || create_price(price_req.to_price(), &mut conn)).await;
+    let date = Utc::now().naive_utc();
+
+    let mut _prices = price_req
+        .prices
+        .iter()
+        .map(|price| price.to_price(date.clone()))
+        .collect::<Vec<Price>>();
+
+    let price = web::block(move || {
+        create_price_record(
+            price_req.to_price_record(date.clone()),
+            _prices.clone(),
+            &mut conn,
+        )
+    })
+    .await;
 
     Ok(match price {
         Ok(_) => HttpResponse::Created().finish(),
@@ -57,105 +72,117 @@ pub async fn create(
     })
 }
 
-fn create_price(_price: Price, conn: &mut DBPooledConnection) -> Result<Price, DieselError> {
+fn create_price_record(
+    _price_record: PriceRecord,
+    _prices: Vec<Price>,
+    conn: &mut DBPooledConnection,
+) -> Result<PriceRecord, DieselError> {
+    use crate::schema::price_records::dsl::*;
     use crate::schema::prices::dsl::*;
 
-    let _ = diesel::insert_into(prices)
-        .values(&_price)
+    let _ = diesel::insert_into(price_records)
+        .values(&_price_record)
         .execute(conn)
-        .expect("Can't create Price");
+        .expect("Can't create Price Record");
 
-    Ok(_price)
-}
-
-///get last price of a given price `/prices/{set_code}/{number}`
-#[get("/prices/{set_code}/{number}")]
-pub async fn get(
-    path: Path<(String, String)>,
-    pool: Data<DBPool>,
-    req: HttpRequest,
-) -> HttpResponse {
-    println!("get prices");
-    let query_str = req.query_string();
-    let qs = QString::from(query_str);
-    let is_foil_string = qs.get("is_foil").unwrap_or("false");
-    let is_foil = value_to_bool(&is_foil_string.to_string());
-    let locale = qs.get("locale").unwrap_or("en").to_string();
-
-    let (set_code, number) = path.into_inner();
-
-    let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
-    let price_response = web::block(move || {
-        find_last_price(
-            format!("{}-{}", set_code, number),
-            is_foil,
-            locale,
-            &mut conn,
-        )
-    })
-    .await;
-
-    match price_response {
-        Ok(price) => HttpResponse::Ok()
-            .json(price.unwrap()),
-        _ => HttpResponse::NotFound().await.unwrap(),
+    for _price in _prices.iter() {
+        let _ = diesel::insert_into(prices)
+            .values(_price)
+            .execute(conn)
+            .expect("Can't create Price");
     }
+
+    Ok(_price_record)
 }
 
-fn find_last_price(
-    _card_id: String,
-    _is_foil: bool,
-    _locale: String,
-    conn: &mut DBPooledConnection,
-) -> Result<ResponsePricedCard, SerializableError> {
-    let _card = cards::table
-        .filter(cards::id.eq(_card_id.clone()))
-        .select(Card::as_select())
-        .get_result(conn)
-        .expect("Card not found");
+// ///get last price of a given price `/prices/{set_code}/{number}`
+// #[get("/prices/{set_code}/{number}")]
+// pub async fn get(
+//     path: Path<(String, String)>,
+//     pool: Data<DBPool>,
+//     req: HttpRequest,
+// ) -> HttpResponse {
+//     println!("get prices");
+//     let query_str = req.query_string();
+//     let qs = QString::from(query_str);
+//     let is_foil_string = qs.get("is_foil").unwrap_or("false");
+//     let is_foil = value_to_bool(&is_foil_string.to_string());
+//     let locale = qs.get("locale").unwrap_or("en").to_string();
 
-    let _localized_name = LocalizedName::belonging_to(&_card)
-        .filter(localized_names::locale.eq(_locale.clone()))
-        .select(LocalizedName::as_select())
-        .first(conn)
-        .expect("Localized name not found");
+//     let (set_code, number) = path.into_inner();
 
-    println!(
-        "color: {}, locale: {}",
-        _card.color.clone(),
-        _locale.clone()
-    );
+//     let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
+//     let price_response = web::block(move || {
+//         find_last_price(
+//             format!("{}-{}", set_code, number),
+//             is_foil,
+//             locale,
+//             &mut conn,
+//         )
+//     })
+//     .await;
 
-    let _localized_color = localized_colors::table
-        .filter(localized_colors::color.eq(_card.color.to_lowercase().clone()))
-        .filter(localized_colors::locale.eq(_locale.clone()))
-        .select(LocalizedColor::as_select())
-        .first(conn)
-        .expect("Localized color not found");
+//     match price_response {
+//         Ok(price) => HttpResponse::Ok()
+//             .json(price.unwrap()),
+//         _ => HttpResponse::NotFound().await.unwrap(),
+//     }
+// }
 
-    let _localized_rarity = localized_rarities::table
-        .filter(localized_rarities::rarity.eq(_card.rarity.to_lowercase().clone()))
-        .filter(localized_rarities::locale.eq(_locale.clone()))
-        .select(LocalizedRarity::as_select())
-        .first(conn)
-        .expect("Localized rarity not found");
+// fn find_last_price(
+//     _card_id: String,
+//     _is_foil: bool,
+//     _locale: String,
+//     conn: &mut DBPooledConnection,
+// ) -> Result<ResponsePricedCard, SerializableError> {
+//     let _card = cards::table
+//         .filter(cards::id.eq(_card_id.clone()))
+//         .select(Card::as_select())
+//         .get_result(conn)
+//         .expect("Card not found");
 
-    let _price = Price::belonging_to(&_card)
-        .select(Price::as_select())
-        .filter(prices::is_foil.eq(_is_foil.clone()))
-        .filter(prices::locale.eq(_locale.clone()))
-        .order(prices::created_at.desc())
-        .first(conn)
-        .expect("Price not found");
+//     let _localized_name = LocalizedName::belonging_to(&_card)
+//         .filter(localized_names::locale.eq(_locale.clone()))
+//         .select(LocalizedName::as_select())
+//         .first(conn)
+//         .expect("Localized name not found");
 
-    return Ok(ResponsePricedCard::new(
-        _card,
-        _price,
-        _localized_name,
-        _localized_color,
-        _localized_rarity,
-    ));
-}
+//     println!(
+//         "color: {}, locale: {}",
+//         _card.color.clone(),
+//         _locale.clone()
+//     );
+
+//     let _localized_color = localized_colors::table
+//         .filter(localized_colors::color.eq(_card.color.to_lowercase().clone()))
+//         .filter(localized_colors::locale.eq(_locale.clone()))
+//         .select(LocalizedColor::as_select())
+//         .first(conn)
+//         .expect("Localized color not found");
+
+//     let _localized_rarity = localized_rarities::table
+//         .filter(localized_rarities::rarity.eq(_card.rarity.to_lowercase().clone()))
+//         .filter(localized_rarities::locale.eq(_locale.clone()))
+//         .select(LocalizedRarity::as_select())
+//         .first(conn)
+//         .expect("Localized rarity not found");
+
+//     let _price = Price::belonging_to(&_card)
+//         .select(Price::as_select())
+//         .filter(prices::is_foil.eq(_is_foil.clone()))
+//         .filter(prices::locale.eq(_locale.clone()))
+//         .order(prices::created_at.desc())
+//         .first(conn)
+//         .expect("Price not found");
+
+//     return Ok(ResponsePricedCard::new(
+//         _card,
+//         _price,
+//         _localized_name,
+//         _localized_color,
+//         _localized_rarity,
+//     ));
+// }
 
 ///get all prices `/all_prices/{set_code}`
 #[get("/all_prices/{set_code}")]
@@ -184,24 +211,30 @@ fn find_all_prices(
     _set_code: String,
     _locale: String,
     conn: &mut DBPooledConnection,
-) -> Result<Vec<ResponseMultiPrice>, SerializableError> {
-    let _prices = prices::table
-        .order((prices::number.asc(), prices::created_at.desc()))
-        .distinct_on(prices::number)
-        .filter(prices::locale.eq(_locale.clone()))
-        .filter(prices::is_foil.eq(false))
-        .filter(prices::set_code.eq(_set_code.clone()))
-        .select(Price::as_select())
+) -> Result<Vec<ResponseMultiPriceRecord>, SerializableError> {
+    let _prices = price_records::table
+        .order((
+            price_records::number.asc(),
+            price_records::created_at.desc(),
+        ))
+        .distinct_on(price_records::number)
+        .filter(price_records::locale.eq(_locale.clone()))
+        .filter(price_records::is_foil.eq(false))
+        .filter(price_records::set_code.eq(_set_code.clone()))
+        .select(PriceRecord::as_select())
         .load(conn)
         .unwrap();
 
-    let _foil_prices = prices::table
-        .order((prices::number.asc(), prices::created_at.desc()))
-        .distinct_on(prices::number)
-        .filter(prices::locale.eq(_locale.clone()))
-        .filter(prices::is_foil.eq(true))
-        .filter(prices::set_code.eq(_set_code.clone()))
-        .select(Price::as_select())
+    let _foil_prices = price_records::table
+        .order((
+            price_records::number.asc(),
+            price_records::created_at.desc(),
+        ))
+        .distinct_on(price_records::number)
+        .filter(price_records::locale.eq(_locale.clone()))
+        .filter(price_records::is_foil.eq(true))
+        .filter(price_records::set_code.eq(_set_code.clone()))
+        .select(PriceRecord::as_select())
         .load(conn)
         .unwrap();
 
@@ -215,7 +248,7 @@ fn find_all_prices(
         let _price = _prices[i].clone();
         let _foil_price = _foil_prices[i].clone();
 
-        let resp = ResponseMultiPrice::new(_price, _foil_price);
+        let resp = ResponseMultiPriceRecord::new(_price, _foil_price);
 
         _multi_prices.push(resp);
     }
@@ -223,7 +256,7 @@ fn find_all_prices(
     return Ok(_multi_prices);
 }
 
-///get all prices `/all_grouped_prices/{set_code}`
+// /get all prices `/all_grouped_prices/{set_code}`
 #[get("/all_grouped_prices/{set_code}")]
 pub async fn all_grouped_prices(
     path: Path<String>,
@@ -238,11 +271,11 @@ pub async fn all_grouped_prices(
     let set_code = path.into_inner();
 
     let mut conn = pool.get().expect(CONNECTION_POOL_ERROR);
-    let prices_response = web::block(move || find_all_grouped_prices(set_code, locale, &mut conn)).await;
+    let prices_response =
+        web::block(move || find_all_grouped_prices(set_code, locale, &mut conn)).await;
 
     match prices_response {
-        Ok(resp) => HttpResponse::Ok()
-            .json(resp.unwrap()),
+        Ok(resp) => HttpResponse::Ok().json(resp.unwrap()),
         _ => HttpResponse::NotFound().await.unwrap(),
     }
 }
@@ -252,32 +285,90 @@ fn find_all_grouped_prices(
     _locale: String,
     conn: &mut DBPooledConnection,
 ) -> Result<ResponsePricesWrapper, SerializableError> {
-    let _prices = prices::table
-        .order((prices::number.asc(), prices::created_at.desc()))
-        .distinct_on(prices::number)
-        .filter(prices::locale.eq(_locale.clone()))
-        .filter(prices::is_foil.eq(false))
-        .filter(prices::set_code.eq(_set_code.clone()))
-        .select(Price::as_select())
+    let _price_records = price_records::table
+        .order((
+            price_records::number.asc(),
+            price_records::created_at.desc(),
+        ))
+        .distinct_on(price_records::number)
+        .filter(price_records::locale.eq(_locale.clone()))
+        .filter(price_records::is_foil.eq(false))
+        .filter(price_records::set_code.eq(_set_code.clone()))
+        .select(PriceRecord::as_select())
         .load(conn)
         .unwrap();
 
-    let _foil_prices = prices::table
-        .order((prices::number.asc(), prices::created_at.desc()))
-        .distinct_on(prices::number)
-        .filter(prices::locale.eq(_locale.clone()))
-        .filter(prices::is_foil.eq(true))
-        .filter(prices::set_code.eq(_set_code.clone()))
+    let _prices = Price::belonging_to(&_price_records)
         .select(Price::as_select())
+        .load(conn)
+        .expect("Price name not found");
+
+    let zip_std = _prices
+        .grouped_by(&_price_records)
+        .into_iter()
+        .zip(_price_records.clone())
+        .map(|(_prices, _price_record)| (_price_record, _prices))
+        .collect::<Vec<(PriceRecord, Vec<Price>)>>();
+
+    let _foil_price_records = price_records::table
+        .order((
+            price_records::number.asc(),
+            price_records::created_at.desc(),
+        ))
+        .distinct_on(price_records::number)
+        .filter(price_records::locale.eq(_locale.clone()))
+        .filter(price_records::is_foil.eq(true))
+        .filter(price_records::set_code.eq(_set_code.clone()))
+        .select(PriceRecord::as_select())
         .load(conn)
         .unwrap();
 
-    if _prices.len() != _foil_prices.len() {
-        return Err(DieselError::NotFound.into());
+    let _foil_prices = Price::belonging_to(&_foil_price_records)
+        .select(Price::as_select())
+        .load(conn)
+        .expect("Price name not found");
+
+    let zip_foil = _foil_prices
+        .grouped_by(&_foil_price_records)
+        .into_iter()
+        .zip(_foil_price_records.clone())
+        .map(|(_foil_prices, _foil_price_record)| (_foil_price_record, _foil_prices))
+        .collect::<Vec<(PriceRecord, Vec<Price>)>>();
+
+    let mut standart_prices = Vec::new();
+
+    for std in zip_std.iter() {
+        let _price_record = std.0.clone();
+        let _prices = std.1.clone();
+
+        let resp_prices = _prices
+            .iter()
+            .map(|p| ResponsePrice::new(p.clone()))
+            .collect::<Vec<ResponsePrice>>();
+
+        let standard = ResponsePriceRecord::new(_price_record.clone(), resp_prices.clone());
+
+        standart_prices.push(standard);
     }
 
-    let resp = ResponsePricesWrapper::new(_foil_prices.clone(), _prices.clone());
-    
+    let mut foil_prices = Vec::new();
+
+    for fl in zip_foil.iter() {
+        let _price_record = fl.0.clone();
+        let _prices = fl.1.clone();
+
+        let resp_prices = _prices
+            .iter()
+            .map(|p| ResponsePrice::new(p.clone()))
+            .collect::<Vec<ResponsePrice>>();
+
+        let foil = ResponsePriceRecord::new(_price_record.clone(), resp_prices.clone());
+
+        foil_prices.push(foil);
+    }
+
+    let resp = ResponsePricesWrapper::new(foil_prices.clone(), standart_prices.clone());
+
     return Ok(resp);
 }
 
